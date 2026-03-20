@@ -347,7 +347,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
-</script>
+None</script>
 <script>
 // ── KEYS ──────────────────────────────────────────────────
 const K_DB  = 'frt_db';
@@ -713,7 +713,7 @@ async function startScan(){
       tessedit_pageseg_mode:   '11',   // sparse text — find text anywhere in image
     });
 
-    document.getElementById('scan-hint').textContent = 'Point top-right RO corner at camera';
+    document.getElementById('scan-hint').textContent = 'Aim camera directly at the RO number';
 
     // Let camera settle
     await new Promise(r => setTimeout(r, 1000));
@@ -726,11 +726,11 @@ async function startScan(){
       if(vid.readyState < 4) return;
       const vw = vid.videoWidth, vh = vid.videoHeight;
 
-      // Crop: right 40%, top 25% of frame — where bold RO number lives
-      const cx = Math.floor(vw * 0.60);
-      const cy = 0;
-      const cw = Math.floor(vw * 0.40);
-      const ch = Math.floor(vh * 0.25);
+      // Crop: center 50% width, center 35% height — aim camera at RO number
+      const cw = Math.floor(vw * 0.50);
+      const ch = Math.floor(vh * 0.35);
+      const cx = Math.floor((vw - cw) / 2);
+      const cy = Math.floor((vh - ch) / 2);
 
       fullCanvas.width  = vw;
       fullCanvas.height = vh;

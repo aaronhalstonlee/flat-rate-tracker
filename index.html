@@ -219,6 +219,11 @@
         </div>
 
         <div class="field">
+          <label>Job Note</label>
+          <input type="text" id="job-note" placeholder="e.g. Brake pads, oil change, alignment…" autocomplete="off">
+        </div>
+
+        <div class="field">
           <div class="tog-row">
             <span class="tog-label">💰 Payroll Flagged</span>
             <label class="tog"><input type="checkbox" id="pflag"><span class="tog-track"></span></label>
@@ -439,7 +444,7 @@ function addJob(){
     workType:  activePill('wtype'),
     hours:     hrs,
     payroll:   document.getElementById('pflag').checked,
-    upsell:    document.getElementById('uflag').checked,
+    note:      document.getElementById('job-note').value.trim(),
     upsellNote:document.getElementById('uflag').checked ? document.getElementById('upsell-note').value.trim() : '',
     synced:    false
   };
@@ -452,6 +457,7 @@ function addJob(){
   document.getElementById('ro').value = '';
   document.getElementById('hrs').value = '0.0';
   document.getElementById('pflag').checked = false;
+  document.getElementById('job-note').value = '';
   document.getElementById('uflag').checked = false;
   document.getElementById('upsell-note').value = '';
   document.getElementById('upsell-note-wrap').style.display = 'none';
@@ -602,6 +608,7 @@ function renderLog(){
             <span class="badge ${e.synced?'sync':'pend'}">${e.synced?'Synced':'Pending'}</span>
           </div>
           <div class="e-meta">${e.workType} · ${e.hours}h ${flags}</div>
+          ${e.note ? `<div class="e-meta" style="color:var(--text)">${e.note}</div>` : ''}
           <div class="e-meta">${dateStr(e.ts)} ${timeStr(e.ts)}</div>
         </div>
       </div>`;

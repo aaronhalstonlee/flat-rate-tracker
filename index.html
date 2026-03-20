@@ -680,55 +680,67 @@ async function startScan(){
   document.getElementById('scan-modal').classList.remove('hidden');
   try{
     scanStream = await navigator.mediaDevices.getUserMedia({
-      video:{
-        facingMode: 'environment',
-        width:  { ideal: 1920 },
-        height: { ideal: 1080 },
-        focusMode:        { ideal: 'continuous' },
-        exposureMode:     { ideal: 'continuous' },
-        whiteBalanceMode: { ideal: 'continuous' }
-      }
+      video:{ facingMode:'environment', width:{ideal:1920}, height:{ideal:1080} }
     });
 
-    // Apply advanced constraints for autofocus if supported
-    const track = scanStream.getVideoTracks()[0];
-    if(track.getCapabilities){
-      const caps = track.getCapabilities();
-      const adv  = {};
-      if(caps.focusMode?.includes('continuous'))    adv.focusMode        = 'continuous';
-      if(caps.exposureMode?.includes('continuous')) adv.exposureMode     = 'continuous';
-      if(Object.keys(adv).length) await track.applyConstraints({ advanced:[adv] }).catch(()=>{});
-    }
-
-    const vid = document.getElementById('scan-video');
+    const vid   = document.getElementById('scan-video');
     vid.srcObject = scanStream;
     await vid.play();
 
-    // Show torch button if supported
-    const track2 = scanStream.getVideoTracks()[0];
-    const caps2  = track2.getCapabilities?.() || {};
-    if(caps2.torch){
-      document.getElementById('torch-btn').style.display = 'block';
-    }
+    const track = scanStream.getVideoTracks()[0];
+    const caps  = track.getCapabilities?.() || {};
+
+    // Apply continuous autofocus / exposure after stream is live
+    const adv = {};
+    if(caps.focusMode?.includes('continuous'))        adv.focusMode        = 'continuous';
+    if(caps.exposureMode?.includes('continuous'))     adv.exposureMode     = 'continuous';
+    if(caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
+    if(Object.keys(adv).length) await track.applyConstraints({advanced:[adv]}).catch(()=>{});
+
+    // Torch
+    if(caps.torch) document.getElementById('torch-btn').style.display = 'block';
+
+    // Tap video to trigger a single-shot focus at that point
+    vid.addEventListener('click', async e=>{
+      const focusAdv = {};
+      if(caps.focusMode?.includes('manual') || caps.focusMode?.includes('single-shot')){
+        const rect = vid.getBoundingClientRect();
+        focusAdv.focusMode   = 'single-shot';
+        focusAdv.focusDistance = caps.focusDistance?.min || 0;
+      } else if(caps.focusMode?.includes('continuous')){
+        focusAdv.focusMode = 'continuous';
+      }
+      if(Object.keys(focusAdv).length) await track.applyConstraints({advanced:[focusAdv]}).catch(()=>{});
+    });
 
     const detector = new BarcodeDetector({
       formats:['code_39','code_93','code_128','ean_8','ean_13','upc_a','upc_e','qr_code','itf','codabar']
     });
 
-    // Small delay to let camera settle before scanning
-    await new Promise(r => setTimeout(r, 800));
+    // Use ImageCapture for crisp still frames — far better for barcode reading
+    let imgCapture = null;
+    try{ imgCapture = new ImageCapture(track); } catch(_){}
+
+    // Let camera warm up
+    await new Promise(r => setTimeout(r, 1200));
 
     scanLoop = setInterval(async()=>{
-      if(vid.readyState < 4) return;
       try{
-        const results = await detector.detect(vid);
+        let source;
+        if(imgCapture){
+          source = await imgCapture.grabFrame();
+        } else {
+          if(vid.readyState < 4) return;
+          source = vid;
+        }
+        const results = await detector.detect(source);
         if(results.length){
           document.getElementById('ro').value = results[0].rawValue;
           stopScan();
           toast('RO scanned: '+results[0].rawValue,'success');
         }
       } catch(_){}
-    }, 350);
+    }, 400);
 
   } catch(e){
     stopScan();

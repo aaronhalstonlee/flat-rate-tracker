@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f0f1a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Flat Rate Tracker</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0f0f1a;--surface:#1a1a2e;--surface2:#22223a;--surface3:#2a2a48;
+      --accent:#4f8ef7;--purple:#7c3aed;--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;
+      --text:#eeeeff;--text2:#8888aa;--border:#2a2a48;--r:12px;--nav:64px;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden}
+    #app{display:flex;flex-direction:column;height:100%}
+
+    /* HEADER */
+    .hdr{padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .hdr-title{font-size:1rem;font-weight:800;letter-spacing:.3px}
+    .hdr-meta{font-size:.7rem;color:var(--text2);text-align:right;line-height:1.5}
+
+    /* CONTENT */
+    .content{flex:1;overflow-y:auto;padding:14px;padding-bottom:calc(var(--nav) + 14px)}
+
+    /* BOTTOM NAV */
+    .nav{position:fixed;bottom:0;left:0;right:0;height:var(--nav);background:var(--surface);
+      border-top:1px solid var(--border);display:flex;z-index:100}
+    .nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:3px;background:none;border:none;color:var(--text2);font-size:.6rem;font-weight:700;
+      text-transform:uppercase;letter-spacing:.5px;cursor:pointer;transition:color .15s;padding:0}
+    .nb svg{width:22px;height:22px}
+    .nb.active{color:var(--accent)}
+
+    /* TABS */
+    .tab{display:none}.tab.active{display:block}
+
+    /* CARD */
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+      padding:14px;margin-bottom:12px}
+    .card-title{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;
+      color:var(--text2);margin-bottom:12px}
+
+    /* FORM */
+    .field{margin-bottom:12px}
+    .field label{display:block;font-size:.7rem;font-weight:700;color:var(--text2);
+      margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+    .field input,.field select{width:100%;padding:11px 13px;background:var(--surface2);
+      border:1.5px solid var(--border);border-radius:8px;color:var(--text);
+      font-size:.95rem;outline:none;-webkit-appearance:none;appearance:none}
+    .field input:focus,.field select:focus{border-color:var(--accent)}
+
+    /* RO ROW */
+    .ro-row{display:flex;gap:8px}
+    .ro-row input{flex:1}
+    .scan-btn{padding:11px 14px;background:var(--accent);border:none;border-radius:8px;
+      color:#fff;cursor:pointer;display:flex;align-items:center;gap:5px;
+      font-size:.8rem;font-weight:700;white-space:nowrap;flex-shrink:0}
+
+    /* PILLS */
+    .pills{display:flex;gap:7px}
+    .pill{flex:1;padding:10px 6px;background:var(--surface2);border:2px solid var(--border);
+      border-radius:8px;color:var(--text2);font-size:.78rem;font-weight:800;text-align:center;cursor:pointer;transition:all .15s}
+    .pill.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+    /* TOGGLES */
+    .tog-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;
+      border-bottom:1px solid var(--border)}
+    .tog-row:last-child{border-bottom:none}
+    .tog-label{font-size:.88rem;font-weight:600}
+    .tog{position:relative;width:46px;height:25px;flex-shrink:0}
+    .tog input{opacity:0;width:0;height:0}
+    .tog-track{position:absolute;inset:0;background:var(--surface2);border:2px solid var(--border);
+      border-radius:13px;cursor:pointer;transition:all .2s}
+    .tog-track::after{content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;
+      background:var(--text2);border-radius:50%;transition:all .2s}
+    .tog input:checked+.tog-track{background:var(--green);border-color:var(--green)}
+    .tog input:checked+.tog-track::after{transform:translateX(21px);background:#fff}
+
+    /* HOURS */
+    .hrs-row{display:flex;align-items:center;gap:8px}
+    .hrs-row input[type=number]{width:80px;text-align:center;font-size:1.4rem;font-weight:800;padding:8px}
+    .hrs-btns{display:flex;gap:5px;flex-wrap:wrap}
+    .step{height:38px;padding:0 10px;background:var(--surface2);border:1px solid var(--border);
+      border-radius:7px;color:var(--text);font-size:.85rem;font-weight:700;cursor:pointer}
+    .step:active{background:var(--accent)}
+
+    /* SUBMIT */
+    .submit{width:100%;padding:15px;background:var(--accent);border:none;border-radius:var(--r);
+      color:#fff;font-size:.95rem;font-weight:800;letter-spacing:.5px;cursor:pointer;
+      text-transform:uppercase;margin-top:2px}
+    .submit:active{opacity:.85}
+
+    /* CLOCK TAB */
+    .clk-display{text-align:center;padding:20px 0 10px}
+    .clk-time{font-size:2.8rem;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-1px}
+    .clk-date{color:var(--text2);font-size:.8rem;margin-top:3px}
+    .period-badge{display:inline-block;padding:3px 12px;background:var(--purple);
+      border-radius:20px;font-size:.7rem;font-weight:800;margin-top:7px}
+    .clk-btn{width:100%;padding:18px;border:none;border-radius:var(--r);
+      font-size:1rem;font-weight:900;text-transform:uppercase;letter-spacing:1px;cursor:pointer;margin-top:10px}
+    .clk-in{background:var(--green);color:#fff}
+    .clk-out{background:var(--red);color:#fff}
+    .clk-btn:active{opacity:.85}
+    .sess-box{text-align:center;padding:12px;background:var(--surface2);border-radius:var(--r);margin-top:10px}
+    .sess-since{font-size:.75rem;color:var(--text2)}
+    .sess-dur{font-size:1.6rem;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums}
+
+    /* LOG */
+    .sync-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;
+      background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px}
+    .sync-txt{font-size:.8rem}
+    .sync-btn{padding:8px 15px;background:var(--accent);border:none;border-radius:6px;
+      color:#fff;font-size:.78rem;font-weight:800;cursor:pointer}
+    .entry{background:var(--surface2);border-radius:8px;padding:11px;margin-bottom:7px;
+      display:flex;align-items:flex-start;gap:10px}
+    .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex-shrink:0}
+    .dot.job{background:var(--accent)}.dot.clock{background:var(--green)}.dot.pend{background:var(--yellow)}
+    .e-ro{font-weight:700;font-size:.9rem}
+    .e-meta{font-size:.72rem;color:var(--text2);margin-top:2px;line-height:1.5}
+    .badge{display:inline-block;padding:1px 7px;border-radius:20px;font-size:.65rem;font-weight:800}
+    .badge.pend{background:var(--yellow);color:#000}
+    .badge.sync{background:var(--green);color:#fff}
+
+    /* SETTINGS */
+    .set-field{margin-bottom:14px}
+    .set-field label{display:block;font-size:.7rem;font-weight:700;color:var(--text2);
+      text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+    .set-field input{width:100%;padding:11px;background:var(--surface2);border:1px solid var(--border);
+      border-radius:8px;color:var(--text);font-size:.8rem;font-family:monospace}
+    .set-btn{width:100%;padding:13px;background:var(--surface2);border:1px solid var(--border);
+      border-radius:var(--r);color:var(--text);font-size:.88rem;font-weight:600;cursor:pointer;
+      text-align:left;margin-bottom:7px;display:flex;align-items:center;gap:9px}
+    .setup-guide{font-size:.78rem;color:var(--text2);line-height:1.7}
+    .setup-guide strong{color:var(--text)}
+    .setup-step{display:flex;gap:10px;margin-bottom:6px}
+    .step-n{color:var(--accent);font-weight:800;flex-shrink:0;width:16px}
+
+    /* SCANNER MODAL */
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:200;display:flex;
+      flex-direction:column;align-items:center;justify-content:center;padding:20px}
+    .modal.hidden{display:none}
+    #scan-video{width:100%;max-width:380px;border-radius:var(--r);border:3px solid var(--accent)}
+    .scan-hint{color:#fff;font-size:.82rem;margin-top:10px;text-align:center}
+    .modal-close{margin-top:14px;padding:12px 32px;background:var(--red);border:none;
+      border-radius:var(--r);color:#fff;font-size:.95rem;font-weight:800;cursor:pointer}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:calc(var(--nav) + 10px);left:14px;right:14px;padding:13px 15px;
+      border-radius:var(--r);font-weight:700;font-size:.88rem;z-index:300;
+      transform:translateY(16px);opacity:0;transition:all .22s;text-align:center;pointer-events:none}
+    .toast.show{transform:translateY(0);opacity:1}
+    .toast.success{background:var(--green);color:#fff}
+    .toast.error{background:var(--red);color:#fff}
+    .toast.info{background:var(--accent);color:#fff}
+
+    .empty{text-align:center;padding:36px 20px;color:var(--text2);font-size:.85rem}
+    .stat-row{display:flex;gap:16px;flex-wrap:wrap}
+    .stat{text-align:center}
+    .stat-n{font-size:1.9rem;font-weight:900}
+    .stat-l{font-size:.65rem;color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
+  </style>
+</head>
+<body>
+<div id="app">
+  <header class="hdr">
+    <div class="hdr-title">⚙️ Flat Rate Tracker</div>
+    <div class="hdr-meta" id="hdr-meta"></div>
+  </header>
+
+  <main class="content">
+
+    <!-- ── JOBS TAB ── -->
+    <div class="tab active" id="tab-jobs">
+      <div class="card">
+        <div class="card-title">New Job Entry</div>
+
+        <div class="field">
+          <label>RO Number</label>
+          <div class="ro-row">
+            <input type="text" id="ro" placeholder="e.g. 123456" inputmode="numeric" autocomplete="off">
+            <button class="scan-btn" onclick="startScan()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
+                <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/>
+                <rect x="7" y="7" width="10" height="10" rx="1"/>
+              </svg>
+              Scan
+            </button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Work Type</label>
+          <div class="pills" id="wtype">
+            <div class="pill active" data-v="WORK" onclick="pill(this,'wtype')">WORK</div>
+            <div class="pill" data-v="TRAINING" onclick="pill(this,'wtype')">TRAINING</div>
+            <div class="pill" data-v="MENTOR" onclick="pill(this,'wtype')">MENTOR</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Labor Hours</label>
+          <div class="hrs-row">
+            <button class="step" onclick="adj(-0.1)">−</button>
+            <input type="number" id="hrs" value="0.0" min="0" max="20" step="0.1">
+            <button class="step" onclick="adj(0.1)">+</button>
+            <div class="hrs-btns">
+              <button class="step" onclick="adj(0.5)">+½</button>
+              <button class="step" onclick="adj(1)">+1</button>
+              <button class="step" onclick="adj(2)">+2</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="tog-row">
+            <span class="tog-label">💰 Payroll Flagged</span>
+            <label class="tog"><input type="checkbox" id="pflag"><span class="tog-track"></span></label>
+          </div>
+          <div class="tog-row">
+            <span class="tog-label">⬆️ Upsell</span>
+            <label class="tog"><input type="checkbox" id="uflag"><span class="tog-track"></span></label>
+          </div>
+        </div>
+
+        <button class="submit" onclick="addJob()">✚ Add Job Entry</button>
+      </div>
+
+      <div class="card" id="today-card">
+        <div class="card-title">Today's Summary</div>
+        <div id="today-body"><div class="empty">No jobs logged today</div></div>
+      </div>
+    </div>
+
+    <!-- ── CLOCK TAB ── -->
+    <div class="tab" id="tab-clock">
+      <div class="card">
+        <div class="clk-display">
+          <div class="clk-time" id="live-time">--:--:--</div>
+          <div class="clk-date" id="live-date"></div>
+          <div class="period-badge" id="period-badge">Period --</div>
+        </div>
+        <button id="clk-btn" class="clk-btn clk-in" onclick="toggleClock()">Clock In</button>
+        <div id="sess-box" class="sess-box" style="display:none">
+          <div class="sess-since" id="sess-since"></div>
+          <div class="sess-dur" id="sess-dur">0:00:00</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Today's Entries</div>
+        <div id="clk-entries"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Pay Period Totals</div>
+        <div id="period-totals"></div>
+      </div>
+    </div>
+
+    <!-- ── LOG TAB ── -->
+    <div class="tab" id="tab-log">
+      <div class="sync-bar">
+        <div class="sync-txt" id="sync-label">⏳ Loading…</div>
+        <button class="sync-btn" onclick="syncAll()">Sync Now</button>
+      </div>
+      <div id="log-list"></div>
+    </div>
+
+    <!-- ── SETTINGS TAB ── -->
+    <div class="tab" id="tab-settings">
+      <div class="card">
+        <div class="card-title">Backend</div>
+        <div class="set-field">
+          <label>Apps Script Web App URL</label>
+          <input type="url" id="script-url" placeholder="https://script.google.com/macros/s/…" oninput="saveUrl()">
+        </div>
+        <div style="font-size:.72rem;color:var(--text2)">Paste your deployed Apps Script URL above. See setup guide.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Data</div>
+        <button class="set-btn" onclick="exportCSV()">📥 Export All Data (CSV)</button>
+        <button class="set-btn" onclick="clearSynced()">🧹 Clear Synced Entries</button>
+        <button class="set-btn" onclick="clearAll()" style="color:var(--red)">⚠️ Clear ALL Local Data</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Apps Script Setup</div>
+        <div class="setup-guide">
+          <div class="setup-step"><span class="step-n">1.</span><span>Open <strong>script.google.com</strong>, create a new project</span></div>
+          <div class="setup-step"><span class="step-n">2.</span><span>Paste the <strong>Code.gs</strong> from the companion file; set your <strong>SHEET_ID</strong></span></div>
+          <div class="setup-step"><span class="step-n">3.</span><span>Deploy → New Deployment → <strong>Web App</strong></span></div>
+          <div class="setup-step"><span class="step-n">4.</span><span>Execute as: <strong>Me</strong> · Access: <strong>Anyone</strong></span></div>
+          <div class="setup-step"><span class="step-n">5.</span><span>Copy the URL, paste above, done</span></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <nav class="nav">
+    <button class="nb active" onclick="tab('jobs',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Jobs
+    </button>
+    <button class="nb" onclick="tab('clock',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Clock
+    </button>
+    <button class="nb" onclick="tab('log',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Log
+    </button>
+    <button class="nb" onclick="tab('settings',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>Settings
+    </button>
+  </nav>
+</div>
+
+<!-- Scanner modal -->
+<div class="modal hidden" id="scan-modal">
+  <video id="scan-video" autoplay muted playsinline></video>
+  <div class="scan-hint">Aim at the RO barcode</div>
+  <button class="modal-close" onclick="stopScan()">Cancel</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js"></script>
+<script>
+// ── KEYS ──────────────────────────────────────────────────
+const K_DB  = 'frt_db';
+const K_CLK = 'frt_clk';
+const K_URL = 'frt_url';
+
+// ── STORAGE ───────────────────────────────────────────────
+const db = {
+  get(){ try{ return JSON.parse(localStorage.getItem(K_DB))||{jobs:[],clock:[]} }catch{ return{jobs:[],clock:[]} } },
+  save(d){ localStorage.setItem(K_DB, JSON.stringify(d)) }
+};
+const clkState = {
+  get(){ try{ return JSON.parse(localStorage.getItem(K_CLK))||{on:false,start:null} }catch{ return{on:false,start:null} } },
+  set(s){ localStorage.setItem(K_CLK, JSON.stringify(s)) }
+};
+
+// ── UTILITIES ─────────────────────────────────────────────
+function payPeriod(d){
+  const dt = d||new Date();
+  return dt.getDate()<=15 ? 'L1' : 'L2';
+}
+function payPeriodLabel(d){
+  const dt = d||new Date();
+  const m  = dt.toLocaleString('default',{month:'short'});
+  const y  = dt.getFullYear();
+  const pp = payPeriod(dt);
+  const end = pp==='L1' ? 15 : new Date(y,dt.getMonth()+1,0).getDate();
+  return `${m} ${pp==='L1'?'1':16}–${end} (${pp})`;
+}
+function fmt2(n){ return String(n).padStart(2,'0') }
+function durStr(ms){
+  const h=Math.floor(ms/3600000),m=Math.floor((ms%3600000)/60000),s=Math.floor((ms%60000)/1000);
+  return `${h}:${fmt2(m)}:${fmt2(s)}`;
+}
+function timeStr(iso){ return new Date(iso).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) }
+function dateStr(iso){ return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'}) }
+
+// ── TOAST ─────────────────────────────────────────────────
+let _tt;
+function toast(msg, type='info'){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(_tt);
+  _tt = setTimeout(()=>el.classList.remove('show'), 2800);
+}
+
+// ── NAV / TABS ────────────────────────────────────────────
+function tab(name, btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='log')   renderLog();
+  if(name==='clock') renderClockTab();
+}
+
+// ── PILL SELECTOR ─────────────────────────────────────────
+function pill(el, gid){
+  document.getElementById(gid).querySelectorAll('.pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+}
+function activePill(gid){
+  return document.querySelector('#'+gid+' .pill.active')?.dataset.v || '';
+}
+
+// ── HOURS STEPPER ─────────────────────────────────────────
+function adj(delta){
+  const inp = document.getElementById('hrs');
+  inp.value = Math.max(0, Math.round((parseFloat(inp.value)+delta)*10)/10).toFixed(1);
+}
+
+// ── JOB ENTRY ─────────────────────────────────────────────
+function addJob(){
+  const ro = document.getElementById('ro').value.trim();
+  if(!ro){ toast('Enter an RO number','error'); return; }
+  const hrs = parseFloat(document.getElementById('hrs').value);
+  if(!hrs||hrs<=0){ toast('Enter labor hours','error'); return; }
+
+  const entry = {
+    id:        Date.now(),
+    type:      'job',
+    ts:        new Date().toISOString(),
+    ro,
+    workType:  activePill('wtype'),
+    hours:     hrs,
+    payroll:   document.getElementById('pflag').checked,
+    upsell:    document.getE

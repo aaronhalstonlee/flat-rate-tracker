@@ -225,7 +225,12 @@
           </div>
           <div class="tog-row">
             <span class="tog-label">⬆️ Upsell</span>
-            <label class="tog"><input type="checkbox" id="uflag"><span class="tog-track"></span></label>
+            <label class="tog"><input type="checkbox" id="uflag" onchange="toggleUpsellNote(this)"><span class="tog-track"></span></label>
+          </div>
+          <div id="upsell-note-wrap" style="display:none;margin-top:10px">
+            <input type="text" id="upsell-note" placeholder="What are you upselling?" autocomplete="off"
+              style="width:100%;padding:11px 13px;background:var(--surface2);border:1.5px solid var(--border);
+              border-radius:8px;color:var(--text);font-size:.95rem;outline:none">
           </div>
         </div>
 
@@ -331,7 +336,15 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js"></script>
+<script>
+// Load ZXing dynamically — if it fails, scan button shows an error but nothing else breaks
+let zxingReady = false;
+const zxScript = document.createElement('script');
+zxScript.src = 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js';
+zxScript.onload  = () => { zxingReady = true; };
+zxScript.onerror = () => { console.warn('ZXing failed to load — scan unavailable'); };
+document.head.appendChild(zxScript);
+</script>
 <script>
 // ── KEYS ──────────────────────────────────────────────────
 const K_DB  = 'frt_db';
@@ -398,6 +411,13 @@ function activePill(gid){
   return document.querySelector('#'+gid+' .pill.active')?.dataset.v || '';
 }
 
+// ── UPSELL NOTE ───────────────────────────────────────────
+function toggleUpsellNote(cb){
+  const wrap = document.getElementById('upsell-note-wrap');
+  wrap.style.display = cb.checked ? 'block' : 'none';
+  if(!cb.checked) document.getElementById('upsell-note').value = '';
+}
+
 // ── HOURS STEPPER ─────────────────────────────────────────
 function adj(delta){
   const inp = document.getElementById('hrs');
@@ -419,4 +439,325 @@ function addJob(){
     workType:  activePill('wtype'),
     hours:     hrs,
     payroll:   document.getElementById('pflag').checked,
-    upsell:    document.getE
+    upsell:    document.getElementById('uflag').checked,
+    upsellNote:document.getElementById('uflag').checked ? document.getElementById('upsell-note').value.trim() : '',
+    synced:    false
+  };
+
+  const d = db.get();
+  d.jobs.push(entry);
+  db.save(d);
+
+  // reset form
+  document.getElementById('ro').value = '';
+  document.getElementById('hrs').value = '0.0';
+  document.getElementById('pflag').checked = false;
+  document.getElementById('uflag').checked = false;
+  document.getElementById('upsell-note').value = '';
+  document.getElementById('upsell-note-wrap').style.display = 'none';
+  document.querySelectorAll('#wtype .pill').forEach(p=>p.classList.toggle('active',p.dataset.v==='WORK'));
+
+  renderToday();
+  toast(`RO ${ro} saved · ${hrs}h`,'success');
+  if(localStorage.getItem(K_URL)) syncAll();
+}
+
+// ── TODAY SUMMARY ─────────────────────────────────────────
+function renderToday(){
+  const d = db.get();
+  const today = new Date().toDateString();
+  const jobs  = d.jobs.filter(j=>new Date(j.ts).toDateString()===today);
+  const el    = document.getElementById('today-body');
+
+  if(!jobs.length){
+    el.innerHTML = '<div class="empty">No jobs logged today</div>';
+    return;
+  }
+
+  const total   = jobs.reduce((s,j)=>s+j.hours,0);
+  const pending = jobs.filter(j=>!j.synced).length;
+  const upsells = jobs.filter(j=>j.upsell).length;
+  const flagged = jobs.filter(j=>j.payroll).length;
+
+  el.innerHTML = `
+    <div class="stat-row" style="margin-bottom:10px">
+      <div class="stat"><div class="stat-n" style="color:var(--accent)">${total.toFixed(1)}</div><div class="stat-l">Hours</div></div>
+      <div class="stat"><div class="stat-n">${jobs.length}</div><div class="stat-l">Jobs</div></div>
+      <div class="stat"><div class="stat-n" style="color:${pending?'var(--yellow)':'var(--green)'}">${pending}</div><div class="stat-l">Pending</div></div>
+    </div>
+    <div style="font-size:.75rem;color:var(--text2)">${upsells} upsell · ${flagged} payroll flagged</div>`;
+}
+
+// ── CLOCK IN/OUT ──────────────────────────────────────────
+function toggleClock(){
+  const s = clkState.get();
+  if(!s.on){
+    clkState.set({on:true, start:new Date().toISOString()});
+    toast('Clocked in ✓','success');
+  } else {
+    const start = new Date(s.start);
+    const end   = new Date();
+    const hours = Math.round((end-start)/3600000*100)/100;
+
+    const entry = {
+      id:      Date.now(),
+      type:    'clock',
+      date:    start.toISOString().split('T')[0],
+      clockIn: s.start,
+      clockOut:end.toISOString(),
+      pp:      payPeriod(start),
+      hours,
+      synced:  false
+    };
+
+    const d = db.get();
+    d.clock.push(entry);
+    db.save(d);
+    clkState.set({on:false, start:null});
+    toast(`Clocked out · ${hours.toFixed(2)}h logged`,'success');
+    if(localStorage.getItem(K_URL)) syncAll();
+  }
+  updateClockBtn();
+  renderClockTab();
+}
+
+function updateClockBtn(){
+  const s   = clkState.get();
+  const btn = document.getElementById('clk-btn');
+  const box = document.getElementById('sess-box');
+  if(!btn) return;
+  if(s.on){
+    btn.textContent = 'Clock Out';
+    btn.className   = 'clk-btn clk-out';
+    box.style.display = 'block';
+    document.getElementById('sess-since').textContent =
+      'Clocked in at '+timeStr(s.start);
+  } else {
+    btn.textContent = 'Clock In';
+    btn.className   = 'clk-btn clk-in';
+    box.style.display = 'none';
+  }
+}
+
+function renderClockTab(){
+  updateClockBtn();
+
+  const d     = db.get();
+  const today = new Date().toDateString();
+  const todayEntries = d.clock.filter(c=>new Date(c.clockIn).toDateString()===today);
+  const el    = document.getElementById('clk-entries');
+
+  el.innerHTML = todayEntries.length
+    ? todayEntries.map(c=>`
+        <div class="entry">
+          <div class="dot ${c.synced?'clock':'pend'}"></div>
+          <div>
+            <div class="e-ro">${timeStr(c.clockIn)} → ${timeStr(c.clockOut)}</div>
+            <div class="e-meta">${c.hours.toFixed(2)}h ·
+              <span class="badge ${c.synced?'sync':'pend'}">${c.synced?'Synced':'Pending'}</span>
+            </div>
+          </div>
+        </div>`).join('')
+    : '<div class="empty">No entries today</div>';
+
+  // Pay period totals
+  const now = new Date();
+  const pp  = payPeriod(now);
+  const ppEntries = d.clock.filter(c=>{
+    const dt=new Date(c.clockIn);
+    return dt.getMonth()===now.getMonth() && dt.getFullYear()===now.getFullYear() && c.pp===pp;
+  });
+  const ppTotal = ppEntries.reduce((s,c)=>s+c.hours,0);
+  document.getElementById('period-totals').innerHTML = `
+    <div class="stat-row" style="margin-bottom:8px">
+      <div class="stat"><div class="stat-n" style="color:var(--accent)">${ppTotal.toFixed(2)}</div><div class="stat-l">Hours</div></div>
+      <div class="stat"><div class="stat-n">${ppEntries.length}</div><div class="stat-l">Sessions</div></div>
+    </div>
+    <div style="font-size:.75rem;color:var(--text2)">${payPeriodLabel()}</div>`;
+}
+
+// ── LOG ───────────────────────────────────────────────────
+function renderLog(){
+  const d   = db.get();
+  const all = [
+    ...d.jobs.map(j=>({...j,_t:'job',  _sort:j.ts})),
+    ...d.clock.map(c=>({...c,_t:'clk', _sort:c.clockIn}))
+  ].sort((a,b)=>b._sort.localeCompare(a._sort));
+
+  const pending = all.filter(e=>!e.synced).length;
+  document.getElementById('sync-label').textContent =
+    pending ? `⏳ ${pending} unsynced` : '✅ All synced';
+
+  const el = document.getElementById('log-list');
+  if(!all.length){ el.innerHTML='<div class="empty">No entries yet</div>'; return; }
+
+  el.innerHTML = all.map(e=>{
+    if(e._t==='job'){
+      const flags=[e.payroll?'💰':'',e.upsell?'⬆️':''].filter(Boolean).join(' ');
+      return `<div class="entry">
+        <div class="dot ${e.synced?'job':'pend'}"></div>
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between">
+            <span class="e-ro">RO# ${e.ro}</span>
+            <span class="badge ${e.synced?'sync':'pend'}">${e.synced?'Synced':'Pending'}</span>
+          </div>
+          <div class="e-meta">${e.workType} · ${e.hours}h ${flags}</div>
+          <div class="e-meta">${dateStr(e.ts)} ${timeStr(e.ts)}</div>
+        </div>
+      </div>`;
+    } else {
+      return `<div class="entry">
+        <div class="dot ${e.synced?'clock':'pend'}"></div>
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between">
+            <span class="e-ro">Clock Entry</span>
+            <span class="badge ${e.synced?'sync':'pend'}">${e.synced?'Synced':'Pending'}</span>
+          </div>
+          <div class="e-meta">${timeStr(e.clockIn)} → ${timeStr(e.clockOut)} · ${e.hours.toFixed(2)}h</div>
+          <div class="e-meta">${dateStr(e.clockIn)} · ${e.pp}</div>
+        </div>
+      </div>`;
+    }
+  }).join('');
+}
+
+// ── SYNC ─────────────────────────────────────────────────
+async function syncAll(){
+  const url = localStorage.getItem(K_URL);
+  if(!url){ toast('No Apps Script URL set','error'); return; }
+
+  const d = db.get();
+  const unsync = [
+    ...d.jobs.filter(j=>!j.synced),
+    ...d.clock.filter(c=>!c.synced)
+  ];
+  if(!unsync.length){ toast('All entries already synced','info'); return; }
+
+  let ok = 0, fail = 0;
+  for(const e of unsync){
+    try{
+      const res  = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(e)
+      });
+      const json = await res.json();
+      if(json.success){
+        if(e.type==='job'){
+          const i=d.jobs.findIndex(j=>j.id===e.id); if(i>=0) d.jobs[i].synced=true;
+        } else {
+          const i=d.clock.findIndex(c=>c.id===e.id); if(i>=0) d.clock[i].synced=true;
+        }
+        ok++;
+      } else {
+        console.warn('sync rejected:', json.error);
+        fail++;
+      }
+    } catch(err){
+      console.warn('sync error:', err);
+      fail++;
+    }
+  }
+
+  db.save(d);
+  renderToday();
+  if(document.getElementById('tab-log').classList.contains('active')) renderLog();
+  if(fail) toast(`Synced ${ok} · ${fail} failed — check console`,'error');
+  else toast(`Synced ${ok}/${unsync.length} ✓`,'success');
+}
+
+// ── BARCODE SCANNER ───────────────────────────────────────
+let scanner = null;
+
+async function startScan(){
+  if(!zxingReady){ toast('Scanner not available — check connection','error'); return; }
+  document.getElementById('scan-modal').classList.remove('hidden');
+  try{
+    const ZX = window.ZXingBrowser;
+    scanner  = new ZX.BrowserMultiFormatReader();
+    const devs = await ZX.BrowserCodeReader.listVideoInputDevices();
+    // prefer back camera
+    const dev = devs.find(d=>/back|rear|environment/i.test(d.label)) || devs[devs.length-1];
+    await scanner.decodeFromVideoDevice(dev?.deviceId, 'scan-video', (res,err)=>{
+      if(res){
+        document.getElementById('ro').value = res.getText();
+        stopScan();
+        toast('RO scanned: '+res.getText(),'success');
+      }
+    });
+  } catch(e){
+    stopScan();
+    toast('Camera not available','error');
+  }
+}
+
+function stopScan(){
+  if(scanner){ scanner.reset(); scanner=null; }
+  document.getElementById('scan-modal').classList.add('hidden');
+}
+
+// ── EXPORT CSV ────────────────────────────────────────────
+function exportCSV(){
+  const d = db.get();
+  let csv = 'type,timestamp,ro,work_type,hours,payroll_flagged,upsell,clock_in,clock_out,pay_period,synced\n';
+  d.jobs.forEach(j=>{
+    csv+=`job,${j.ts},${j.ro},${j.workType},${j.hours},${j.payroll?'Y':'N'},${j.upsell?'Y':'N'},,,${payPeriod(new Date(j.ts))},${j.synced?'Y':'N'}\n`;
+  });
+  d.clock.forEach(c=>{
+    csv+=`clock,${c.date},,,,,,${c.clockIn},${c.clockOut},${c.pp},${c.synced?'Y':'N'}\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`frt-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  toast('CSV exported','success');
+}
+
+function clearSynced(){
+  if(!confirm('Remove synced entries from local storage?')) return;
+  const d=db.get(); d.jobs=d.jobs.filter(j=>!j.synced); d.clock=d.clock.filter(c=>!c.synced);
+  db.save(d); renderLog(); renderToday(); toast('Cleared synced entries','info');
+}
+function clearAll(){
+  if(!confirm('⚠️ Delete ALL local data? Cannot be undone.')) return;
+  localStorage.removeItem(K_DB); localStorage.removeItem(K_CLK);
+  renderLog(); renderToday(); toast('All data cleared','info');
+}
+function saveUrl(){
+  localStorage.setItem(K_URL, document.getElementById('script-url').value.trim());
+}
+
+// ── CLOCK TICK ────────────────────────────────────────────
+setInterval(()=>{
+  const now=new Date();
+  const lt=document.getElementById('live-time');
+  const ld=document.getElementById('live-date');
+  const pb=document.getElementById('period-badge');
+  if(lt) lt.textContent=now.toLocaleTimeString('en-US',{hour12:false});
+  if(ld) ld.textContent=now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  if(pb) pb.textContent='Pay Period: '+payPeriodLabel();
+
+  const s=clkState.get();
+  const sd=document.getElementById('sess-dur');
+  if(s.on && sd) sd.textContent=durStr(Date.now()-new Date(s.start).getTime());
+}, 1000);
+
+// ── HEADER TICK ───────────────────────────────────────────
+function updateHeader(){
+  const now=new Date();
+  document.getElementById('hdr-meta').innerHTML=
+    `${payPeriodLabel()}<br>${now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}`;
+}
+setInterval(updateHeader, 60000);
+
+// ── INIT ──────────────────────────────────────────────────
+(function init(){
+  updateHeader();
+  updateClockBtn();
+  renderToday();
+  const url=localStorage.getItem(K_URL);
+  if(url) document.getElementById('script-url').value=url;
+})();
+</script>
+</body>
+</html>

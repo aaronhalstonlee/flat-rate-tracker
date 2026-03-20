@@ -334,7 +334,10 @@
 <!-- Scanner modal -->
 <div class="modal hidden" id="scan-modal">
   <video id="scan-video" autoplay muted playsinline></video>
-  <div class="scan-hint">Aim at the RO barcode</div>
+  <div class="scan-hint">Hold steady — aim at barcode</div>
+  <button id="torch-btn" onclick="toggleTorch()" style="display:none;margin-top:10px;
+    padding:10px 24px;background:var(--yellow);border:none;border-radius:var(--r);
+    color:#000;font-size:.9rem;font-weight:800;cursor:pointer">🔦 Torch</button>
   <button class="modal-close" onclick="stopScan()">Cancel</button>
 </div>
 
@@ -342,7 +345,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-None</script>
+</script>
 <script>
 // ── KEYS ──────────────────────────────────────────────────
 const K_DB  = 'frt_db';
@@ -677,33 +680,55 @@ async function startScan(){
   document.getElementById('scan-modal').classList.remove('hidden');
   try{
     scanStream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+      video:{
+        facingMode: 'environment',
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 },
+        focusMode:        { ideal: 'continuous' },
+        exposureMode:     { ideal: 'continuous' },
+        whiteBalanceMode: { ideal: 'continuous' }
+      }
     });
+
+    // Apply advanced constraints for autofocus if supported
+    const track = scanStream.getVideoTracks()[0];
+    if(track.getCapabilities){
+      const caps = track.getCapabilities();
+      const adv  = {};
+      if(caps.focusMode?.includes('continuous'))    adv.focusMode        = 'continuous';
+      if(caps.exposureMode?.includes('continuous')) adv.exposureMode     = 'continuous';
+      if(Object.keys(adv).length) await track.applyConstraints({ advanced:[adv] }).catch(()=>{});
+    }
+
     const vid = document.getElementById('scan-video');
     vid.srcObject = scanStream;
     await vid.play();
+
+    // Show torch button if supported
+    const track2 = scanStream.getVideoTracks()[0];
+    const caps2  = track2.getCapabilities?.() || {};
+    if(caps2.torch){
+      document.getElementById('torch-btn').style.display = 'block';
+    }
 
     const detector = new BarcodeDetector({
       formats:['code_39','code_93','code_128','ean_8','ean_13','upc_a','upc_e','qr_code','itf','codabar']
     });
 
-    const canvas = document.createElement('canvas');
-    const ctx    = canvas.getContext('2d');
+    // Small delay to let camera settle before scanning
+    await new Promise(r => setTimeout(r, 800));
 
     scanLoop = setInterval(async()=>{
-      if(vid.readyState < 2) return;
-      canvas.width  = vid.videoWidth;
-      canvas.height = vid.videoHeight;
-      ctx.drawImage(vid, 0, 0);
+      if(vid.readyState < 4) return;
       try{
-        const results = await detector.detect(canvas);
+        const results = await detector.detect(vid);
         if(results.length){
           document.getElementById('ro').value = results[0].rawValue;
           stopScan();
           toast('RO scanned: '+results[0].rawValue,'success');
         }
       } catch(_){}
-    }, 200);
+    }, 350);
 
   } catch(e){
     stopScan();
@@ -716,7 +741,17 @@ function stopScan(){
   if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
   const vid = document.getElementById('scan-video');
   vid.srcObject = null;
+  document.getElementById('torch-btn').style.display = 'none';
   document.getElementById('scan-modal').classList.add('hidden');
+}
+
+let torchOn = false;
+async function toggleTorch(){
+  if(!scanStream) return;
+  torchOn = !torchOn;
+  const track = scanStream.getVideoTracks()[0];
+  await track.applyConstraints({ advanced:[{ torch: torchOn }] }).catch(()=>{});
+  document.getElementById('torch-btn').textContent = torchOn ? '🔦 Torch ON' : '🔦 Torch';
 }
 
 // ── EXPORT CSV ────────────────────────────────────────────

@@ -334,7 +334,8 @@
 <!-- Scanner modal -->
 <div class="modal hidden" id="scan-modal">
   <video id="scan-video" autoplay muted playsinline></video>
-  <div class="scan-hint">Hold steady — aim at barcode</div>
+  <canvas id="scan-crop" style="width:100%;max-width:380px;border-radius:8px;margin-top:8px;border:2px dashed var(--accent)"></canvas>
+  <div class="scan-hint" id="scan-hint">Point top-right RO corner at camera</div>
   <button id="torch-btn" onclick="toggleTorch()" style="display:none;margin-top:10px;
     padding:10px 24px;background:var(--yellow);border:none;border-radius:var(--r);
     color:#000;font-size:.9rem;font-weight:800;cursor:pointer">🔦 Torch</button>
@@ -344,6 +345,7 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 </script>
 <script>
@@ -669,100 +671,121 @@ async function syncAll(){
   else toast(`Synced ${ok}/${unsync.length} ✓`,'success');
 }
 
-// ── BARCODE SCANNER ───────────────────────────────────────
+// ── OCR SCANNER ───────────────────────────────────────────
 let scanStream = null;
 let scanLoop   = null;
+let ocrWorker  = null;
+let torchOn    = false;
 
 async function startScan(){
-  if(!('BarcodeDetector' in window)){
-    toast('Barcode scanner not supported on this browser','error'); return;
-  }
   document.getElementById('scan-modal').classList.remove('hidden');
+  document.getElementById('scan-hint').textContent = 'Starting camera…';
+
   try{
     scanStream = await navigator.mediaDevices.getUserMedia({
       video:{ facingMode:'environment', width:{ideal:1920}, height:{ideal:1080} }
     });
 
-    const vid   = document.getElementById('scan-video');
+    const vid = document.getElementById('scan-video');
     vid.srcObject = scanStream;
     await vid.play();
 
     const track = scanStream.getVideoTracks()[0];
     const caps  = track.getCapabilities?.() || {};
-
-    // Apply continuous autofocus / exposure after stream is live
-    const adv = {};
+    const adv   = {};
     if(caps.focusMode?.includes('continuous'))        adv.focusMode        = 'continuous';
     if(caps.exposureMode?.includes('continuous'))     adv.exposureMode     = 'continuous';
     if(caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
     if(Object.keys(adv).length) await track.applyConstraints({advanced:[adv]}).catch(()=>{});
-
-    // Torch
     if(caps.torch) document.getElementById('torch-btn').style.display = 'block';
 
-    // Tap video to trigger a single-shot focus at that point
-    vid.addEventListener('click', async e=>{
-      const focusAdv = {};
-      if(caps.focusMode?.includes('manual') || caps.focusMode?.includes('single-shot')){
-        const rect = vid.getBoundingClientRect();
-        focusAdv.focusMode   = 'single-shot';
-        focusAdv.focusDistance = caps.focusDistance?.min || 0;
-      } else if(caps.focusMode?.includes('continuous')){
-        focusAdv.focusMode = 'continuous';
-      }
-      if(Object.keys(focusAdv).length) await track.applyConstraints({advanced:[focusAdv]}).catch(()=>{});
+    // Load Tesseract worker
+    document.getElementById('scan-hint').textContent = 'Loading OCR…';
+    const { createWorker } = Tesseract;
+    ocrWorker = await createWorker('eng', 1, {
+      workerPath:   'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+      langPath:     'https://tessdata.projectnaptha.com/4.0.0',
+      corePath:     'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-simd-lstm.wasm.js',
+      logger: ()=>{}
+    });
+    await ocrWorker.setParameters({
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz- ',
+      tessedit_pageseg_mode:   '11',   // sparse text — find text anywhere in image
     });
 
-    const detector = new BarcodeDetector({
-      formats:['code_39','code_93','code_128','ean_8','ean_13','upc_a','upc_e','qr_code','itf','codabar']
-    });
+    document.getElementById('scan-hint').textContent = 'Point top-right RO corner at camera';
 
-    // Use ImageCapture for crisp still frames — far better for barcode reading
-    let imgCapture = null;
-    try{ imgCapture = new ImageCapture(track); } catch(_){}
+    // Let camera settle
+    await new Promise(r => setTimeout(r, 1000));
 
-    // Let camera warm up
-    await new Promise(r => setTimeout(r, 1200));
+    const fullCanvas  = document.createElement('canvas');
+    const cropCanvas  = document.getElementById('scan-crop');
+    const cropCtx     = cropCanvas.getContext('2d');
 
     scanLoop = setInterval(async()=>{
+      if(vid.readyState < 4) return;
+      const vw = vid.videoWidth, vh = vid.videoHeight;
+
+      // Crop: right 40%, top 25% of frame — where bold RO number lives
+      const cx = Math.floor(vw * 0.60);
+      const cy = 0;
+      const cw = Math.floor(vw * 0.40);
+      const ch = Math.floor(vh * 0.25);
+
+      fullCanvas.width  = vw;
+      fullCanvas.height = vh;
+      fullCanvas.getContext('2d').drawImage(vid, 0, 0);
+
+      // Show crop preview
+      cropCanvas.width  = cw;
+      cropCanvas.height = ch;
+      cropCtx.drawImage(fullCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
+
+      // Luminance-based threshold — blue paper → white, black ink → black
+      // Weights: R×0.299 G×0.587 B×0.114 (standard luma)
+      // Blue paper has high B but low luma, so it correctly maps to white
+      const imgData = cropCtx.getImageData(0, 0, cw, ch);
+      const data    = imgData.data;
+      for(let i = 0; i < data.length; i += 4){
+        const luma = data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114;
+        const v    = luma > 100 ? 255 : 0;
+        data[i] = data[i+1] = data[i+2] = v;
+      }
+      cropCtx.putImageData(imgData, 0, 0);
+
       try{
-        let source;
-        if(imgCapture){
-          source = await imgCapture.grabFrame();
-        } else {
-          if(vid.readyState < 4) return;
-          source = vid;
-        }
-        const results = await detector.detect(source);
-        if(results.length){
-          document.getElementById('ro').value = results[0].rawValue;
+        const { data:{ text } } = await ocrWorker.recognize(cropCanvas);
+        const match = text.replace(/\s/g,'').match(/\d{6}/);
+        if(match){
+          document.getElementById('ro').value = match[0];
           stopScan();
-          toast('RO scanned: '+results[0].rawValue,'success');
+          toast('RO scanned: ' + match[0], 'success');
         }
       } catch(_){}
-    }, 400);
+    }, 800);
 
   } catch(e){
     stopScan();
-    toast('Camera not available','error');
+    toast('Camera error: ' + e.message, 'error');
   }
 }
 
 function stopScan(){
   clearInterval(scanLoop); scanLoop = null;
-  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  if(ocrWorker){ ocrWorker.terminate(); ocrWorker = null; }
+  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream = null; }
   const vid = document.getElementById('scan-video');
   vid.srcObject = null;
   document.getElementById('torch-btn').style.display = 'none';
+  torchOn = false;
   document.getElementById('scan-modal').classList.add('hidden');
 }
 
-let torchOn = false;
 async function toggleTorch(){
   if(!scanStream) return;
   torchOn = !torchOn;
   const track = scanStream.getVideoTracks()[0];
-  await track.applyConstraints({ advanced:[{ torch: torchOn }] }).catch(()=>{});
+  await track.applyConstraints({advanced:[{torch: torchOn}]}).catch(()=>{});
   document.getElementById('torch-btn').textContent = torchOn ? '🔦 Torch ON' : '🔦 Torch';
 }
 

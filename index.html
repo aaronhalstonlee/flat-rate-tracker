@@ -342,14 +342,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// Load ZXing dynamically — if it fails, scan button shows an error but nothing else breaks
-let zxingReady = false;
-const zxScript = document.createElement('script');
-zxScript.src = 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js';
-zxScript.onload  = () => { zxingReady = true; };
-zxScript.onerror = () => { console.warn('ZXing failed to load — scan unavailable'); };
-document.head.appendChild(zxScript);
-</script>
+None</script>
 <script>
 // ── KEYS ──────────────────────────────────────────────────
 const K_DB  = 'frt_db';
@@ -674,24 +667,44 @@ async function syncAll(){
 }
 
 // ── BARCODE SCANNER ───────────────────────────────────────
-let scanner = null;
+let scanStream = null;
+let scanLoop   = null;
 
 async function startScan(){
-  if(!zxingReady){ toast('Scanner not available — check connection','error'); return; }
+  if(!('BarcodeDetector' in window)){
+    toast('Barcode scanner not supported on this browser','error'); return;
+  }
   document.getElementById('scan-modal').classList.remove('hidden');
   try{
-    const ZX = window.ZXingBrowser;
-    scanner  = new ZX.BrowserMultiFormatReader();
-    const devs = await ZX.BrowserCodeReader.listVideoInputDevices();
-    // prefer back camera
-    const dev = devs.find(d=>/back|rear|environment/i.test(d.label)) || devs[devs.length-1];
-    await scanner.decodeFromVideoDevice(dev?.deviceId, 'scan-video', (res,err)=>{
-      if(res){
-        document.getElementById('ro').value = res.getText();
-        stopScan();
-        toast('RO scanned: '+res.getText(),'success');
-      }
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
     });
+    const vid = document.getElementById('scan-video');
+    vid.srcObject = scanStream;
+    await vid.play();
+
+    const detector = new BarcodeDetector({
+      formats:['code_39','code_93','code_128','ean_8','ean_13','upc_a','upc_e','qr_code','itf','codabar']
+    });
+
+    const canvas = document.createElement('canvas');
+    const ctx    = canvas.getContext('2d');
+
+    scanLoop = setInterval(async()=>{
+      if(vid.readyState < 2) return;
+      canvas.width  = vid.videoWidth;
+      canvas.height = vid.videoHeight;
+      ctx.drawImage(vid, 0, 0);
+      try{
+        const results = await detector.detect(canvas);
+        if(results.length){
+          document.getElementById('ro').value = results[0].rawValue;
+          stopScan();
+          toast('RO scanned: '+results[0].rawValue,'success');
+        }
+      } catch(_){}
+    }, 200);
+
   } catch(e){
     stopScan();
     toast('Camera not available','error');
@@ -699,7 +712,10 @@ async function startScan(){
 }
 
 function stopScan(){
-  if(scanner){ scanner.reset(); scanner=null; }
+  clearInterval(scanLoop); scanLoop = null;
+  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  const vid = document.getElementById('scan-video');
+  vid.srcObject = null;
   document.getElementById('scan-modal').classList.add('hidden');
 }
 

@@ -799,7 +799,7 @@ async function toggleTorch(){
   toast(`Fetching ${type} from Sheet…`, 'info');
   try{
     const res  = await fetch(url + '?type=' + type);
-    const json = await res.json();
+    //const json = await res.json();
     const text = await res.text();
     console.log("Raw response: ", text);
     if(!json.success){ 

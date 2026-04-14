@@ -792,21 +792,15 @@ async function toggleTorch(){
 }
 
 // ── RESTORE FROM SHEET ────────────────────────────────────
-  async function restoreFromSheet(type){
+async function restoreFromSheet(type){
   const url = localStorage.getItem(K_URL);
   if(!url){ toast('No Apps Script URL set','error'); return; }
 
   toast(`Fetching ${type} from Sheet…`, 'info');
   try{
     const res  = await fetch(url + '?type=' + type);
-    //const json = await res.json();
-    const text = await res.text();
-    console.log("Raw response: ", text);
-    if(!json.success){ 
-      console.log(res.text)
-      toast('Restore failed: ' + json.error, 'error'); 
-      return; 
-    }
+    const json = await res.json();
+    if(!json.success){ toast('Restore failed: ' + json.error, 'error'); return; }
 
     const d = db.get();
     const incoming = json.data;
@@ -832,6 +826,7 @@ async function toggleTorch(){
     toast('Restore error: ' + err.message, 'error');
   }
 }
+
 // ── EXPORT CSV ────────────────────────────────────────────
 function exportCSV(){
   const d = db.get();
@@ -893,9 +888,6 @@ setInterval(updateHeader, 60000);
   renderToday();
   const url=localStorage.getItem(K_URL);
   if(url) document.getElementById('script-url').value=url;
-  if(localStorage.getItem(K_URL)) syncAll();
-  if('serviceWorker' in navigator)
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
 })();
 </script>
 </body>

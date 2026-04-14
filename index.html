@@ -800,6 +800,8 @@ async function toggleTorch(){
   try{
     const res  = await fetch(url + '?type=' + type);
     const json = await res.json();
+    const text = await res.text();
+    console.log("Raw response: ", text);
     if(!json.success){ 
       console.log(res.text)
       toast('Restore failed: ' + json.error, 'error'); 

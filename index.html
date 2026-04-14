@@ -296,6 +296,8 @@
 
       <div class="card">
         <div class="card-title">Data</div>
+        <button class="set-btn" onclick="restoreFromSheet('jobs')">☁️ Restore Jobs from Sheet</button>
+        <button class="set-btn" onclick="restoreFromSheet('clock')">☁️ Restore Clock from Sheet</button>
         <button class="set-btn" onclick="exportCSV()">📥 Export All Data (CSV)</button>
         <button class="set-btn" onclick="clearSynced()">🧹 Clear Synced Entries</button>
         <button class="set-btn" onclick="clearAll()" style="color:var(--red)">⚠️ Clear ALL Local Data</button>
@@ -347,7 +349,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
-None</script>
+</script>
 <script>
 // ── KEYS ──────────────────────────────────────────────────
 const K_DB  = 'frt_db';
@@ -787,6 +789,42 @@ async function toggleTorch(){
   const track = scanStream.getVideoTracks()[0];
   await track.applyConstraints({advanced:[{torch: torchOn}]}).catch(()=>{});
   document.getElementById('torch-btn').textContent = torchOn ? '🔦 Torch ON' : '🔦 Torch';
+}
+
+// ── RESTORE FROM SHEET ────────────────────────────────────
+async function restoreFromSheet(type){
+  const url = localStorage.getItem(K_URL);
+  if(!url){ toast('No Apps Script URL set','error'); return; }
+
+  toast(`Fetching ${type} from Sheet…`, 'info');
+  try{
+    const res  = await fetch(url + '?type=' + type);
+    const json = await res.json();
+    if(!json.success){ toast('Restore failed: ' + json.error, 'error'); return; }
+
+    const d = db.get();
+    const incoming = json.data;
+
+    if(type === 'jobs'){
+      // Merge: keep any local entries not in sheet, add all sheet entries
+      const sheetIds = new Set(incoming.map(e => e.id));
+      const localOnly = d.jobs.filter(j => !sheetIds.has(j.id));
+      d.jobs = [...incoming, ...localOnly];
+      toast(`Restored ${incoming.length} jobs ✓`, 'success');
+    } else {
+      const sheetIds = new Set(incoming.map(e => e.id));
+      const localOnly = d.clock.filter(c => !sheetIds.has(c.id));
+      d.clock = [...incoming, ...localOnly];
+      toast(`Restored ${incoming.length} clock entries ✓`, 'success');
+    }
+
+    db.save(d);
+    renderToday();
+    if(document.getElementById('tab-log').classList.contains('active')) renderLog();
+
+  } catch(err){
+    toast('Restore error: ' + err.message, 'error');
+  }
 }
 
 // ── EXPORT CSV ────────────────────────────────────────────

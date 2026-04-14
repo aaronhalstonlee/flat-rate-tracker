@@ -792,7 +792,7 @@ async function toggleTorch(){
 }
 
 // ── RESTORE FROM SHEET ────────────────────────────────────
-async function restoreFromSheet(type){
+  async function restoreFromSheet(type){
   const url = localStorage.getItem(K_URL);
   if(!url){ toast('No Apps Script URL set','error'); return; }
 
@@ -800,7 +800,11 @@ async function restoreFromSheet(type){
   try{
     const res  = await fetch(url + '?type=' + type);
     const json = await res.json();
-    if(!json.success){ toast('Restore failed: ' + json.error, 'error'); return; }
+    if(!json.success){ 
+      console.log(res.text)
+      toast('Restore failed: ' + json.error, 'error'); 
+      return; 
+    }
 
     const d = db.get();
     const incoming = json.data;
@@ -826,7 +830,6 @@ async function restoreFromSheet(type){
     toast('Restore error: ' + err.message, 'error');
   }
 }
-
 // ── EXPORT CSV ────────────────────────────────────────────
 function exportCSV(){
   const d = db.get();

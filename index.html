@@ -888,6 +888,9 @@ setInterval(updateHeader, 60000);
   renderToday();
   const url=localStorage.getItem(K_URL);
   if(url) document.getElementById('script-url').value=url;
+  if(localStorage.getItem(K_URL)) syncAll();
+  if('serviceWorker' in navigator)
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
 })();
 </script>
 </body>

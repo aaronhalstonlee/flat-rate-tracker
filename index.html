@@ -882,7 +882,7 @@ function getPeriodHours(){
   const now = new Date();
   const pp = payPeriod(now);
   
-  // Jobs in current period
+  // Jobs in current period only
   const jobHours = d.jobs
     .filter(j=>{
       const jdt = new Date(j.ts);
@@ -892,17 +892,7 @@ function getPeriodHours(){
     })
     .reduce((s,j)=>s+j.hours, 0);
   
-  // Clock entries in current period
-  const clockHours = d.clock
-    .filter(c=>{
-      const cdt = new Date(c.clockIn);
-      return cdt.getMonth()===now.getMonth() && 
-             cdt.getFullYear()===now.getFullYear() && 
-             c.pp===pp;
-    })
-    .reduce((s,c)=>s+c.hours, 0);
-  
-  return jobHours + clockHours;
+  return jobHours;
 }
 
 // ── HEADER TICK ───────────────────────────────────────────

@@ -1,4 +1,4 @@
-const V = 'v5'; // bump this on every deploy
+const V = 'v6'; // bump this on every deploy
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(['./', './index.html', './manifest.json'])));
   self.skipWaiting();

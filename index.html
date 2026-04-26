@@ -464,6 +464,7 @@ function addJob(){
   document.querySelectorAll('#wtype .pill').forEach(p=>p.classList.toggle('active',p.dataset.v==='WORK'));
 
   renderToday();
+  updateHeader();
   toast(`RO ${ro} saved · ${hrs}h`,'success');
   if(localStorage.getItem(K_URL)) syncAll();
 }
@@ -525,6 +526,7 @@ function toggleClock(){
   }
   updateClockBtn();
   renderClockTab();
+  updateHeader();
 }
 
 function updateClockBtn(){
@@ -820,6 +822,7 @@ async function restoreFromSheet(type){
 
     db.save(d);
     renderToday();
+    updateHeader();
     if(document.getElementById('tab-log').classList.contains('active')) renderLog();
 
   } catch(err){
@@ -873,11 +876,41 @@ setInterval(()=>{
   if(s.on && sd) sd.textContent=durStr(Date.now()-new Date(s.start).getTime());
 }, 1000);
 
+// ── PERIOD HOURS ──────────────────────────────────────────
+function getPeriodHours(){
+  const d = db.get();
+  const now = new Date();
+  const pp = payPeriod(now);
+  
+  // Jobs in current period
+  const jobHours = d.jobs
+    .filter(j=>{
+      const jdt = new Date(j.ts);
+      return jdt.getMonth()===now.getMonth() && 
+             jdt.getFullYear()===now.getFullYear() && 
+             payPeriod(jdt)===pp;
+    })
+    .reduce((s,j)=>s+j.hours, 0);
+  
+  // Clock entries in current period
+  const clockHours = d.clock
+    .filter(c=>{
+      const cdt = new Date(c.clockIn);
+      return cdt.getMonth()===now.getMonth() && 
+             cdt.getFullYear()===now.getFullYear() && 
+             c.pp===pp;
+    })
+    .reduce((s,c)=>s+c.hours, 0);
+  
+  return jobHours + clockHours;
+}
+
 // ── HEADER TICK ───────────────────────────────────────────
 function updateHeader(){
   const now=new Date();
+  const hours = getPeriodHours().toFixed(1);
   document.getElementById('hdr-meta').innerHTML=
-    `${payPeriodLabel()}<br>${now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}`;
+    `${payPeriodLabel()}<br>${hours}h · ${now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}`;
 }
 setInterval(updateHeader, 60000);
 
